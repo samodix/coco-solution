@@ -1,0 +1,289 @@
+// ===========================================
+// DOFUS BUSINESS — Account Manager
+// Schéma de base de données
+// ===========================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================
+// ENUMS
+// ===========================================
+
+enum UserRole {
+  ADMIN
+  MEMBER
+}
+
+enum GameType {
+  DOFUS_3
+  DOFUS_RETRO
+  WAKFU
+  OTHER
+}
+
+enum AccountStatus {
+  ACTIVE
+  PAUSED
+  TO_CHECK
+  EXPIRED
+  BANNED
+  ARCHIVED
+}
+
+enum SubscriptionStatus {
+  UNKNOWN
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  PAUSED
+}
+
+enum BuildElement {
+  UNKNOWN
+  TERRE
+  FEU
+  EAU
+  AIR
+  MULTI
+  SAGESSE
+  PROSPECTION
+}
+
+enum CharacterRole {
+  UNKNOWN
+  ROX
+  TANK
+  HEAL
+  PLACEMENT
+  SUPPORT
+  FARM
+  CRAFT
+  PVP
+  PVM
+}
+
+enum CharacterStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum TeamStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum GoalType {
+  LEVELING
+  STUFF
+  KAMAS
+  QUEST
+  DUNGEON
+  PROFESSION
+  FARM
+  OTHER
+}
+
+enum GoalPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum GoalStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  CANCELLED
+}
+
+// ===========================================
+// MODÈLES
+// ===========================================
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String?
+  role         String    @default("MEMBER") // UserRole
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  gameAccounts GameAccount[]
+  auditLogs    AuditLog[]
+  sessions     AuthSession[]
+
+  @@index([role])
+}
+
+model AuthSession {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model GameAccount {
+  id                    String    @id @default(cuid())
+  ownerId               String
+  label                 String
+  gameType              String    @default("DOFUS_3") // GameType
+  server                String?
+  email                 String?
+  phone                 String?
+  status                String    @default("ACTIVE") // AccountStatus
+  subscriptionStatus    String    @default("UNKNOWN") // SubscriptionStatus
+  subscriptionExpiresAt DateTime?
+  hasTwoFactor          Boolean   @default(false)
+  notes                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  owner         User           @relation(fields: [ownerId], references: [id])
+  characters    Character[]
+  subscriptions Subscription[]
+  goals         Goal[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([server])
+}
+
+model Character {
+  id            String   @id @default(cuid())
+  gameAccountId String
+  name          String
+  className     String
+  level         Int      @default(1)
+  server        String?
+  buildElement  String   @default("UNKNOWN") // BuildElement
+  role          String   @default("UNKNOWN") // CharacterRole
+  profession1   String?
+  profession2   String?
+  profession3   String?
+  status        String   @default("ACTIVE") // CharacterStatus
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  gameAccount     GameAccount  @relation(fields: [gameAccountId], references: [id])
+  teamMemberships TeamMember[]
+  leadingTeams    Team[]
+  goals           Goal[]
+
+  @@index([gameAccountId])
+  @@index([className])
+  @@index([level])
+}
+
+model Team {
+  id                String   @id @default(cuid())
+  name              String
+  leaderCharacterId String?
+  objective         String?
+  status            String   @default("ACTIVE") // TeamStatus
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  leaderCharacter Character?   @relation(fields: [leaderCharacterId], references: [id])
+  members         TeamMember[]
+  goals           Goal[]
+
+  @@index([status])
+}
+
+model TeamMember {
+  id          String   @id @default(cuid())
+  teamId      String
+  characterId String
+  position    Int      @default(0)
+  roleInTeam  String?
+  createdAt   DateTime @default(now())
+
+  team      Team      @relation(fields: [teamId], references: [id])
+  character Character @relation(fields: [characterId], references: [id])
+
+  @@unique([teamId, characterId])
+}
+
+model Subscription {
+  id            String    @id @default(cuid())
+  gameAccountId String
+  startsAt      DateTime?
+  endsAt        DateTime
+  amount        Float?
+  currency      String    @default("MAD")
+  paymentMethod String?
+  status        String    @default("ACTIVE") // SubscriptionStatus
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  gameAccount GameAccount @relation(fields: [gameAccountId], references: [id])
+
+  @@index([gameAccountId])
+  @@index([endsAt])
+}
+
+model Goal {
+  id                 String    @id @default(cuid())
+  title              String
+  type               String    @default("OTHER") // GoalType
+  priority           String    @default("MEDIUM") // GoalPriority
+  status             String    @default("TODO") // GoalStatus
+  deadline           DateTime?
+  relatedAccountId   String?
+  relatedCharacterId String?
+  relatedTeamId      String?
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  relatedAccount   GameAccount? @relation(fields: [relatedAccountId], references: [id])
+  relatedCharacter Character?   @relation(fields: [relatedCharacterId], references: [id])
+  relatedTeam      Team?        @relation(fields: [relatedTeamId], references: [id])
+
+  @@index([status])
+  @@index([priority])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   String? // JSON serialized as string for SQLite
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType])
+  @@index([createdAt])
+}
